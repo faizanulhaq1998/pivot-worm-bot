@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deriv Smart Trader – Pivot + Worm (Advanced)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body{font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;background:#f4f7fa;color:#333;margin:0;padding:20px;transition:background .3s}
+        .container{max-width:1100px;margin:auto;background:#fff;padding:30px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.1)}
+        h1,h2,h3{color:#2c3e50}
+        .chart-container{position:relative;height:400px;margin:30px 0;background:#fafafa;border-radius:8px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+        .rules{background:#eef5ff;padding:20px;border-left:5px solid #3498db;border-radius:8px;margin:20px 0;line-height:1.7;display:none}
+        .rule{margin:12px 0;padding:10px;background:#fff;border-radius:6px;border:1px solid #ddd}
+        .level{display:inline-block;padding:4px 10px;border-radius:20px;font-weight:bold;font-size:.9em;margin-right:8px}
+        .upper{background:#e74c3c;color:#fff}.lower{background:#27ae60;color:#fff}.middle{background:#f39c12;color:#fff}
+        .btn{padding:10px 20px;background:#3498db;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:16px;margin:10px 5px}
+        .btn:hover{background:#2980b9}
+        .input-group{margin:15px 0}
+        label{display:inline-block;width:80px;font-weight:bold}
+        input,select{padding:8px;width:60px;border:1px solid #ccc;border-radius:4px}
+        .worm-digit{display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;margin:2px;border-radius:50%;font-weight:bold;color:#fff}
+        .even{background:#3498db}.odd{background:#e74c3c}.pivot{border:3px solid #f1c40f}
+        .footer{margin-top:50px;text-align:center;color:#7f8c8d;font-size:.9em}
+        .api-section{background:#e8f5e8;padding:20px;border-radius:8px;margin:20px 0;border-left:5px solid #27ae60}
+        .trade-settings{background:#fff3cd;padding:20px;border-radius:8px;margin:20px 0;border-left:5px solid #f39c12}
+        #token{width:300px;padding:8px}
+        .preset-group{margin:10px 0}
+        .backtest-section{background:#e3e7fa;padding:20px;border-radius:8px;margin:20px 0;border-left:5px solid #6c63ff}
+        .backtest-result{margin:10px 0;padding:10px;background:#f8f9fa;border-radius:8px}
+        .risk-warning{color:#e74c3c;font-weight:bold}
+        .theme-toggle{float:right}
+        .lang-select{float:right;margin-right:20px}
+        .help-modal{display:none;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.5);z-index:1000}
+        .help-content{background:#fff;padding:30px;border-radius:12px;max-width:600px;margin:60px auto}
+        .close-help{float:right;cursor:pointer;font-size:1.5em}
+        .dark-mode{background:#23272f;color:#eee}
+        .dark-mode .container{background:#23272f;color:#eee}
+        .dark-mode .chart-container{background:#2c2f36}
+        .dark-mode .rules{background:#2c2f36}
+        .dark-mode .backtest-section{background:#23272f}
+        .dark-mode .help-content{background:#23272f;color:#eee}
+        @media(max-width:700px){
+            .container{padding:10px}
+            .input-group label{width:100%}
+            input,select{width:100%}
+            .btn{width:100%;margin:5px 0}
+        }
+    </style>
+</head>
+<body>
+    <div class="theme-toggle"><button class="btn" onclick="toggleTheme()">Dark/Light</button></div>
+    <div class="lang-select">
+        <select id="langSelect" onchange="setLang(this.value)">
+            <option value="en">EN</option><option value="es">ES</option>
+        </select>
+    </div>
+
+    <div class="container">
+        <h1 id="title">Deriv Smart Trader – Pivot + Worm Strategy (Advanced)</h1>
+        <button class="btn" onclick="showHelp()">Help</button>
+        <p><strong id="subtitle">Last-5-Digits Analyzer | Volatility Markets | Live Tick Stream</strong></p>
+
+        <!-- ==================== API CONNECTION ==================== -->
+        <div class="api-section">
+            <h2 id="apiTitle">Deriv API (Demo / Real)</h2>
+            <div class="input-group">
+                <label for="token" id="tokenLabel">Token:</label>
+                <input type="password" id="token" placeholder="Your Deriv API token">
+                <button class="btn" onclick="connectAPI()" id="connectBtn">Connect</button>
+                <button class="btn" onclick="disconnectAPI()" id="disconnectBtn">Disconnect</button>
+            </div>
+            <div class="input-group">
+                <label id="marketLabel">Market:</label>
+                <select id="marketSelect" onchange="if(isConnected) subscribeTicks()">
+                    <option value="R_10">R_10</option><option value="R_25">R_25</option>
+                    <option value="R_50">R_50</option><option value="R_75">R_75</option>
+                    <option value="R_100">R_100</option>
+                </select>
+            </div>
+            <div id="status" style="font-weight:bold;color:#666;">Disconnected</div>
+            <div id="balance" style="font-size:1.2em;color:#27ae60;">Balance: --</div>
+        </div>
+
+        <!-- ==================== TRADE SETTINGS ==================== -->
+        <div class="trade-settings">
+            <h2 id="botSettingsTitle">Bot Settings</h2>
+            <div class="input-group">
+                <label id="stakeLabel">Stake ($):</label><input type="number" id="stake" value="5" min="0.35" step="0.01">
+                <label id="durationLabel">Duration (ticks):</label><input type="number" id="duration" value="5" min="1" max="10">
+                <label id="autoTradeLabel">Auto Trade:</label><input type="checkbox" id="autoTrade">
+            </div>
+            <div class="input-group">
+                <label id="stopLossLabel">Stop-Loss ($):</label><input type="number" id="stopLoss" value="20" min="1" step="0.01">
+                <label id="takeProfitLabel">Take-Profit ($):</label><input type="number" id="takeProfit" value="20" min="1" step="0.01">
+                <label id="maxLossesLabel">Max Losses:</label><input type="number" id="maxLosses" value="3" min="1" step="1">
+            </div>
+            <div class="input-group">
+                <button class="btn" id="manualRiseBtn" onclick="manualBuy('RISE')" disabled style="background:#27ae60;color:#fff;">Manual RISE (CALL)</button>
+                <button class="btn" id="manualFallBtn" onclick="manualBuy('FALL')" disabled style="background:#e74c3c;color:#fff;">Manual FALL (PUT)</button>
+            </div>
+            <div id="stats" style="margin-top:10px;font-weight:bold;">Trades: 0 | Wins: 0 | Losses: 0 | Win %: 0%</div>
+            <div id="sessionStats" style="margin-top:5px;font-size:.95em;color:#555;"></div>
+            <div id="riskWarning" class="risk-warning"></div>
+            <button class="btn" onclick="exportHistory('csv')">Export CSV</button>
+            <button class="btn" onclick="exportHistory('json')">Export JSON</button>
+        </div>
+
+        <!-- ==================== PRESETS ==================== -->
+        <div class="preset-group">
+            <label id="presetsLabel">Presets:</label>
+            <select id="presetList" onchange="loadPreset()"></select>
+            <button class="btn" onclick="savePreset()" id="savePresetBtn">Save Preset</button>
+            <button class="btn" onclick="deletePreset()" id="deletePresetBtn">Delete Preset</button>
+            <input type="text" id="presetName" placeholder="Preset name" style="width:120px;">
+        </div>
+
+        <!-- ==================== MANUAL DIGITS ==================== -->
+        <div class="input-group">
+            <label>D1 (T-4):</label><input type="number" min="0" max="9" id="d1" value="5" />
+            <label>D2 (T-3):</label><input type="number" min="0" max="9" id="d2" value="4" />
+            <label>D3 (T-2):</label><input type="number" min="0" max="9" id="d3" value="6" />
+            <label>D4 (T-1):</label><input type="number" min="0" max="9" id="d4" value="8" />
+            <label>D5 (Now):</label><input type="number" min="0" max="9" id="d5" value="7" />
+            <button class="btn" onclick="analyze()" id="analyzeBtn">Analyze</button>
+            <button class="btn" onclick="demo()" id="demoBtn">Demo</button>
+            <p style="font-size:.9em;color:#666;" id="manualInputNote"></p>
+        </div>
+
+        <!-- ==================== WORM CHART ==================== -->
+        <div class="chart-container"><canvas id="wormChart"></canvas></div>
+        <div id="wormVisual" style="text-align:center;margin:20px 0;"></div>
+
+        <!-- ==================== RESULT ==================== -->
+        <div id="result" style="font-size:1.3em;font-weight:bold;text-align:center;padding:15px;background:#f8f9fa;border-radius:8px;"></div>
+
+        <!-- ==================== RULES ==================== -->
+        <div class="rules" id="rulesDisplay"></div>
+
+        <!-- ==================== BACKTESTING ==================== -->
+        <div class="backtest-section">
+            <h2 id="backtestTitle">Backtesting Tool</h2>
+            <div>
+                <label id="pasteDigitsLabel">Paste Digits (comma or space separated):</label><br>
+                <textarea id="backtestDigits" rows="2" style="width:90%;"></textarea>
+            </div>
+            <div>
+                <label id="uploadCSVLabel">Or Upload CSV (single column of digits):</label>
+                <input type="file" id="backtestFile" accept=".csv">
+            </div>
+            <button class="btn" onclick="runBacktest()" id="runBacktestBtn">Run Backtest</button>
+            <div class="backtest-result" id="backtestResult"></div>
+            <div class="chart-container" style="height:300px;"><canvas id="backtestChart"></canvas></div>
+        </div>
+
+        <div class="footer"><p id="footerText"></p></div>
+    </div>
+
+    <!-- ==================== HELP MODAL ==================== -->
+    <div class="help-modal" id="helpModal">
+        <div class="help-content">
+            <span class="close-help" onclick="hideHelp()">x</span>
+            <h2>Help & Documentation</h2>
+            <p>
+                <strong>Strategy:</strong> Pivot + Worm analyzes the last 5 digits of the tick stream for Volatility markets.<br>
+                <strong>Features:</strong> Auto/manual trading, risk management, presets, backtesting, export, multi-market, multi-language, dark/light theme.<br>
+                <strong>API Token:</strong> Get your token from <a href="https://app.deriv.com/account/api-token" target="_blank">Deriv API Token</a>.<br>
+                <strong>App ID:</strong> Required for GitHub Pages. Get it from <a href="https://developers.deriv.com" target="_blank">developers.deriv.com</a>.<br>
+                <strong>FAQ:</strong><br>
+                - <b>Why is auto-trade disabled?</b> Risk limits may have been hit.<br>
+                - <b>How do I use backtesting?</b> Paste or upload digits, then click Run Backtest.<br>
+                - <b>How do I change language?</b> Use the dropdown at the top right.<br>
+                - <b>How do I switch theme?</b> Use the moon/sun button at the top right.<br>
+            </p>
+        </div>
+    </div>
+
+<script>
+// === CONFIG – CHANGE ONLY THIS LINE ===
+const APP_ID = '108055';  // ←←← REPLACE WITH YOUR APP ID FROM developers.deriv.com
+const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${108055}`;
+
+/* =============================================================
+   LANGUAGE DICTIONARY
+   ============================================================= */
+const lang = {
+    en:{title:"Deriv Smart Trader – Pivot + Worm Strategy (Advanced)",subtitle:"Last-5-Digits Analyzer | Volatility Markets | Live Tick Stream",apiTitle:"Deriv API (Demo / Real)",tokenLabel:"Token:",marketLabel:"Market:",connectBtn:"Connect",disconnectBtn:"Disconnect",botSettingsTitle:"Bot Settings",stakeLabel:"Stake ($):",durationLabel:"Duration (ticks):",autoTradeLabel:"Auto Trade:",stopLossLabel:"Stop-Loss ($):",takeProfitLabel:"Take-Profit ($):",maxLossesLabel:"Max Losses:",manualRiseBtn:"Manual RISE (CALL)",manualFallBtn:"Manual FALL (PUT)",presetsLabel:"Presets:",savePresetBtn:"Save Preset",deletePresetBtn:"Delete Preset",pasteDigitsLabel:"Paste Digits (comma or space separated):",uploadCSVLabel:"Or Upload CSV (single column of digits):",runBacktestBtn:"Run Backtest",backtestTitle:"Backtesting Tool",footerText:"Strategy: <strong>Pivot Breakout + Worm Momentum</strong> | Volatility Markets | Live Tick Stream | Auto/Manual Bot | Risk Management | Presets | Backtesting | Export | Multi-language | Theme",riskWarning:"Warning: Trading involves risk. Use only money you can afford to lose.",statusDisconnected:"Disconnected",statusConnected:"Connected",balanceText:"Balance: --",analyzing:"Analyzing…",noSignal:"No clear signal",riseSignal:"STRONG RISE SIGNAL",fallSignal:"STRONG FALL SIGNAL",manualInputNote:"Manual input for offline testing – live stream overwrites when connected."},
+    es:{title:"Deriv Smart Trader – Estrategia Pivot + Worm (Avanzada)",subtitle:"Analizador de últimos 5 dígitos | Mercados de volatilidad | Stream de ticks en vivo",apiTitle:"API Deriv (Demo / Real)",tokenLabel:"Token:",marketLabel:"Mercado:",connectBtn:"Conectar",disconnectBtn:"Desconectar",botSettingsTitle:"Configuración del Bot",stakeLabel:"Apuesta ($):",durationLabel:"Duración (ticks):",autoTradeLabel:"Auto-Trade:",stopLossLabel:"Stop-Loss ($):",takeProfitLabel:"Take-Profit ($):",maxLossesLabel:"Máx. Pérdidas:",manualRiseBtn:"Manual RISE (CALL)",manualFallBtn:"Manual FALL (PUT)",presetsLabel:"Presets:",savePresetBtn:"Guardar Preset",deletePresetBtn:"Eliminar Preset",pasteDigitsLabel:"Pegar Dígitos (separados por coma o espacio):",uploadCSVLabel:"O subir CSV (columna única de dígitos):",runBacktestBtn:"Ejecutar Backtest",backtestTitle:"Herramienta de Backtesting",footerText:"Estrategia: <strong>Pivot Breakout + Worm Momentum</strong> | Mercados de Volatilidad | Stream en Vivo | Bot Auto/Manual | Gestión de Riesgo | Presets | Backtesting | Exportar | Multi-idioma | Tema",riskWarning:"Advertencia: Operar implica riesgo. Usa solo dinero que puedas permitirte perder.",statusDisconnected:"Desconectado",statusConnected:"Conectado",balanceText:"Saldo: --",analyzing:"Analizando…",noSignal:"Sin señal clara",riseSignal:"SEÑAL FUERTE DE SUBIDA",fallSignal:"SEÑAL FUERTE DE BAJADA",manualInputNote:"Entrada manual para pruebas sin conexión – el stream en vivo sobrescribe al conectar."}
+};
+let currentLang = 'en';
+
+/* =============================================================
+   GLOBAL VARIABLES
+   ============================================================= */
+let ws = null;
+let isConnected = false;
+let accountCurrency = 'USD';
+let balance = 0;
+let currentMarket = 'R_10';
+let ticks = [];
+let last5 = [];
+let wormChart = null, backtestChart = null;
+const tradeHistory = [], openContracts = {};
+let sessionProfit = 0, consecutiveLosses = 0;
+let proposalId = null;
+const payoutPct = 0.95;
+
+/* =============================================================
+   UTILITIES
+   ============================================================= */
+const $ = id => document.getElementById(id);
+function updateLang(){
+    const t = lang[currentLang];
+    document.title = t.title;
+    $('title').textContent = t.title;
+    $('subtitle').textContent = t.subtitle;
+    $('apiTitle').textContent = t.apiTitle;
+    $('tokenLabel').textContent = t.tokenLabel;
+    $('marketLabel').textContent = t.marketLabel;
+    $('connectBtn').textContent = t.connectBtn;
+    $('disconnectBtn').textContent = t.disconnectBtn;
+    $('botSettingsTitle').textContent = t.botSettingsTitle;
+    $('stakeLabel').textContent = t.stakeLabel;
+    $('durationLabel').textContent = t.durationLabel;
+    $('autoTradeLabel').textContent = t.autoTradeLabel;
+    $('stopLossLabel').textContent = t.stopLossLabel;
+    $('takeProfitLabel').textContent = t.takeProfitLabel;
+    $('maxLossesLabel').textContent = t.maxLossesLabel;
+    $('manualRiseBtn').textContent = t.manualRiseBtn;
+    $('manualFallBtn').textContent = t.manualFallBtn;
+    $('presetsLabel').textContent = t.presetsLabel;
+    $('savePresetBtn').textContent = t.savePresetBtn;
+    $('deletePresetBtn').textContent = t.deletePresetBtn;
+    $('pasteDigitsLabel').textContent = t.pasteDigitsLabel;
+    $('uploadCSVLabel').textContent = t.uploadCSVLabel;
+    $('runBacktestBtn').textContent = t.runBacktestBtn;
+    $('backtestTitle').textContent = t.backtestTitle;
+    $('footerText').innerHTML = t.footerText;
+    $('riskWarning').textContent = t.riskWarning;
+    $('manualInputNote').textContent = t.manualInputNote;
+    updateStatus(); updateBalance();
+}
+function setLang(l){ currentLang=l; updateLang(); loadPresetsList(); }
+function toggleTheme(){
+    document.body.classList.toggle('dark-mode');
+    localStorage.setItem('theme', document.body.classList.contains('dark-mode')?'dark':'light');
+}
+if(localStorage.getItem('theme')==='dark') document.body.classList.add('dark-mode');
+function showHelp(){ $('helpModal').style.display='block'; }
+function hideHelp(){ $('helpModal').style.display='none'; }
+window.onclick=e=>{ if(e.target=== $('helpModal')) hideHelp(); };
+
+/* =============================================================
+   DERIV API – WITH AUTO RECONNECT
+   ============================================================= */
+function connectAPI() {
+    const token = $('token').value.trim();
+    if (!token) { alert('Enter API token'); return; }
+    if (ws) disconnectAPI();
+
+    $('status').textContent = 'Connecting…';
+    $('status').style.color = '#3498db';
+
+    ws = new WebSocket(WS_URL);
+    let reconnectAttempts = 0;
+    const maxReconnect = 5;
+
+    ws.onopen = () => {
+        $('status').textContent = 'Authorizing…';
+        $('status').style.color = '#f39c12';
+        ws.send(JSON.stringify({ authorize: token }));
+    };
+
+    ws.onmessage = msg => {
+        const d = JSON.parse(msg.data);
+        if (d.error) { alert(`API error: ${d.error.message}`); disconnectAPI(); return; }
+
+        switch (d.msg_type) {
+            case 'authorize':
+                if (d.authorize && d.authorize.loginid) {
+                    isConnected = true;
+                    accountCurrency = d.authorize.currency || 'USD';
+                    updateStatus();
+                    requestBalance();
+                    subscribeTicks();
+                    $('manualRiseBtn').disabled = false;
+                    $('manualFallBtn').disabled = false;
+                } else { alert('Invalid token'); disconnectAPI(); }
+                break;
+            case 'balance':
+                balance = d.balance.balance;
+                updateBalance(); break;
+            case 'tick':
+                const price = parseFloat(d.tick.quote);
+                const digit = Math.abs(Math.round(price * 100) % 10);
+                processNewDigit(digit, price);
+                break;
+            case 'proposal':
+                if (d.proposal && d.proposal.id) {
+                    proposalId = d.proposal.id;
+                    ws.send(JSON.stringify({ buy: proposalId, price: parseFloat($('stake').value) }));
+                }
+                break;
+            case 'buy':
+                if (d.buy && d.buy.contract_id) {
+                    handleBuyResponse(d.buy);
+                    ws.send(JSON.stringify({ proposal_open_contract: 1, contract_id: d.buy.contract_id }));
+                }
+                break;
+            case 'proposal_open_contract':
+                if (d.proposal_open_contract && d.proposal_open_contract.is_sold) {
+                    handleContractUpdate(d.proposal_open_contract);
+                }
+                break;
+        }
+    };
+
+    ws.onerror = () => { console.error('WebSocket error'); disconnectAPI(); };
+    ws.onclose = () => {
+        isConnected = false;
+        updateStatus();
+        if (reconnectAttempts < maxReconnect) {
+            reconnectAttempts++;
+            setTimeout(connectAPI, 2000 * reconnectAttempts);
+        }
+    };
+}
+
+function disconnectAPI() {
+    if (ws) { ws.close(); ws = null; }
+    isConnected = false; proposalId = null;
+    $('manualRiseBtn').disabled = true;
+    $('manualFallBtn').disabled = true;
+    updateStatus();
+}
+
+function updateStatus() {
+    const t = lang[currentLang];
+    $('status').textContent = isConnected ? t.statusConnected : t.statusDisconnected;
+    $('status').style.color = isConnected ? '#27ae60' : '#e74c3c';
+}
+function updateBalance() {
+    const t = lang[currentLang];
+    $('balance').textContent = isConnected
+        ? `Balance: ${balance.toFixed(2)} ${accountCurrency}`
+        : t.balanceText;
+}
+function requestBalance() { if (ws) ws.send(JSON.stringify({ balance: 1 })); }
+function subscribeTicks() {
+    if (!ws || !isConnected) return;
+    ws.send(JSON.stringify({ forget_all: 'ticks' }));
+    currentMarket = $('marketSelect').value;
+    ws.send(JSON.stringify({ ticks: currentMarket, subscribe: 1 }));
+}
+
+/* =============================================================
+   TICK PROCESSING
+   ============================================================= */
+function processNewDigit(digit, price) {
+    ticks.push(price);
+    last5.push(digit);
+    if (last5.length > 5) last5.shift();
+
+    if (last5.length === 5) {
+        for (let i = 0; i < 5; i++) $(`d${i+1}`).value = last5[i];
+    }
+    updateWormChart(); drawWormVisual();
+
+    if ($('autoTrade').checked && canTrade()) {
+        getSignalAsync().then(sig => { if (sig) autoTrade(sig); });
+    }
+}
+function updateWormChart() {
+    const ctx = $('wormChart').getContext('2d');
+    const data = last5.slice(-50);
+    const labels = Array.from({length: data.length}, (_, i) => i + 1);
+    if (!wormChart) {
+        wormChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets: [{ label: 'Last Digit', data, borderColor: '#3498db', fill: false, tension: 0.3 }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 9 } } }
+        });
+    } else {
+        wormChart.data.labels = labels;
+        wormChart.data.datasets[0].data = data;
+        wormChart.update('quiet');
+    }
+}
+function drawWormVisual() {
+    const c = $('wormVisual'); c.innerHTML = '';
+    last5.forEach((d, i) => {
+        const el = document.createElement('div');
+        el.className = `worm-digit ${d % 2 === 0 ? 'even' : 'odd'}${i === 4 ? ' pivot' : ''}`;
+        el.textContent = d;
+        c.appendChild(el);
+    });
+}
+
+/* =============================================================
+   STRATEGY ENGINE
+   ============================================================= */
+function getSignalAsync() {
+    return new Promise(resolve => {
+        if (last5.length < 5) { resolve(null); return; }
+        const [d1, d2, d3, d4, d5] = last5;
+        const pivot = d3;
+        const upperBreak = d5 > pivot && d4 > pivot && d2 <= pivot;
+        const lowerBreak = d5 < pivot && d4 < pivot && d2 >= pivot;
+        const wormUp = d5 > d4 && d4 > d3;
+        const wormDown = d5 < d4 && d4 > d3;
+        const strongRise = (upperBreak || wormUp) && d5 >= 6;
+        const strongFall = (lowerBreak || wormDown) && d5 <= 3;
+
+        const rulesDiv = $('rulesDisplay'); rulesDiv.innerHTML = '';
+        const add = (txt, cls) => {
+            const div = document.createElement('div');
+            div.className = `rule ${cls}`;
+            div.innerHTML = `<span class="level ${cls}">${cls.toUpperCase()}</span> ${txt}`;
+            rulesDiv.appendChild(div);
+        };
+        add(`Pivot = ${pivot}`, 'middle');
+        if (upperBreak) add('Upper breakout', 'upper');
+        if (lowerBreak) add('Lower breakout', 'lower');
+        if (wormUp) add('Worm up', 'upper');
+        if (wormDown) add('Worm down', 'lower');
+
+        const res = $('result');
+        res.textContent = lang[currentLang].analyzing;
+        setTimeout(() => {
+            if (strongRise) { res.textContent = lang[currentLang].riseSignal; res.style.color = '#27ae60'; $('rulesDisplay').style.display = 'block'; resolve('RISE'); }
+            else if (strongFall) { res.textContent = lang[currentLang].fallSignal; res.style.color = '#e74c3c'; $('rulesDisplay').style.display = 'block'; resolve('FALL'); }
+            else { res.textContent = lang[currentLang].noSignal; res.style.color = '#555'; resolve(null); }
+        }, 300);
+    });
+}
+
+/* =============================================================
+   TRADING LOGIC
+   ============================================================= */
+function canTrade() {
+    if (!isConnected) return false;
+    const maxL = parseInt($('maxLosses').value);
+    if (consecutiveLosses >= maxL) return false;
+    const tp = parseFloat($('takeProfit').value);
+    const sl = parseFloat($('stopLoss').value);
+    return sessionProfit < tp && sessionProfit > -sl;
+}
+function manualBuy(dir) { if (!isConnected) { alert('Connect first'); return; } placeContract(dir, parseFloat($('stake').value)); }
+function autoTrade(dir) { if (!canTrade()) return; placeContract(dir, parseFloat($('stake').value)); }
+
+function placeContract(type, stake) {
+    if (!isConnected) return;
+    const dur = parseInt($('duration').value);
+    const params = {
+        contract_type: type === 'RISE' ? 'CALL' : 'PUT',
+        symbol: currentMarket,
+        duration: dur,
+        duration_unit: 't',
+        basis: 'stake',
+        amount: stake,
+        currency: accountCurrency
+    };
+    ws.send(JSON.stringify({ proposal: 1, ...params }));
+}
+
+function handleBuyResponse(buy) {
+    const entry = {
+        id: buy.contract_id,
+        type: buy.contract_type,
+        stake: buy.buy_price,
+        direction: buy.contract_type === 'CALL' ? 'RISE' : 'FALL',
+        timestamp: new Date().toISOString()
+    };
+    tradeHistory.push(entry);
+    openContracts[entry.id] = entry;
+    updateStats();
+}
+function handleContractUpdate(c) {
+    const id = c.contract_id;
+    const entry = openContracts[id];
+    if (!entry) return;
+    delete openContracts[id];
+
+    const profit = c.profit || 0;
+    entry.result = profit > 0 ? 'WIN' : 'LOSS';
+    entry.profit = profit;
+
+    sessionProfit += profit;
+    consecutiveLosses = entry.result === 'LOSS' ? consecutiveLosses + 1 : 0;
+
+    updateStats();
+    requestBalance();
+    checkRiskLimits();
+}
+
+/* =============================================================
+   UI / STATS
+   ============================================================= */
+function updateStats() {
+    const wins = tradeHistory.filter(t => t.result === 'WIN').length;
+    const losses = tradeHistory.filter(t => t.result === 'LOSS').length;
+    const total = wins + losses;
+    const pct = total ? (wins / total * 100).toFixed(1) : 0;
+    $('stats').textContent = `Trades: ${total} | Wins: ${wins} | Losses: ${losses} | Win %: ${pct}%`;
+    $('sessionStats').textContent = `Session P/L: ${sessionProfit.toFixed(2)} | Consecutive losses: ${consecutiveLosses}`;
+}
+function checkRiskLimits() {
+    const sl = parseFloat($('stopLoss').value);
+    const tp = parseFloat($('takeProfit').value);
+    const maxL = parseInt($('maxLosses').value);
+    if (sessionProfit <= -sl || sessionProfit >= tp || consecutiveLosses >= maxL) {
+        $('autoTrade').checked = false;
+        alert('Risk limit reached – auto-trade disabled');
+    }
+}
+
+/* =============================================================
+   PRESETS
+   ============================================================= */
+function loadPresetsList() {
+    const sel = $('presetList');
+    sel.innerHTML = '<option value="">-- Select Preset --</option>';
+    const presets = JSON.parse(localStorage.getItem('pivotWormPresets') || '{}');
+    Object.keys(presets).forEach(n => {
+        const o = document.createElement('option');
+        o.value = n; o.textContent = n;
+        sel.appendChild(o);
+    });
+}
+loadPresetsList();
+
+function savePreset() {
+    const name = $('presetName').value.trim();
+    if (!name) { alert('Enter preset name'); return; }
+    const data = {
+        stake: $('stake').value,
+        duration: $('duration').value,
+        stopLoss: $('stopLoss').value,
+        takeProfit: $('takeProfit').value,
+        maxLosses: $('maxLosses').value,
+        market: $('marketSelect').value
+    };
+    const all = JSON.parse(localStorage.getItem('pivotWormPresets') || '{}');
+    all[name] = data;
+    localStorage.setItem('pivotWormPresets', JSON.stringify(all));
+    loadPresetsList();
+    $('presetName').value = '';
+}
+function loadPreset() {
+    const name = $('presetList').value;
+    if (!name) return;
+    const all = JSON.parse(localStorage.getItem('pivotWormPresets') || '{}');
+    const p = all[name];
+    if (!p) return;
+    $('stake').value = p.stake;
+    $('duration').value = p.duration;
+    $('stopLoss').value = p.stopLoss;
+    $('takeProfit').value = p.takeProfit;
+    $('maxLosses').value = p.maxLosses;
+    $('marketSelect').value = p.market;
+    currentMarket = p.market;
+    if (isConnected) subscribeTicks();
+}
+function deletePreset() {
+    const name = $('presetList').value;
+    if (!name) return;
+    if (!confirm(`Delete "${name}"?`)) return;
+    const all = JSON.parse(localStorage.getItem('pivotWormPresets') || '{}');
+    delete all[name];
+    localStorage.setItem('pivotWormPresets', JSON.stringify(all));
+    loadPresetsList();
+}
+
+/* =============================================================
+   MANUAL / DEMO
+   ============================================================= */
+function analyze() {
+    last5 = [+$('d1').value, +$('d2').value, +$('d3').value, +$('d4').value, +$('d5').value];
+    updateWormChart(); drawWormVisual(); getSignalAsync();
+}
+function demo() {
+    for (let i = 1; i <= 5; i++) $(`d${i}`).value = Math.floor(Math.random() * 10);
+    analyze();
+}
+
+/* =============================================================
+   BACKTESTING
+   ============================================================= */
+function runBacktest() {
+    let src = [];
+    const txt = $('backtestDigits').value.trim();
+    if (txt) {
+        src = txt.replace(/,/g, ' ').split(/\s+/).map(Number).filter(n => n >= 0 && n <= 9);
+    } else {
+        const f = $('backtestFile').files[0];
+        if (!f) { alert('Paste digits or upload CSV'); return; }
+        const r = new FileReader();
+        r.onload = e => {
+            src = e.target.result.split(/\r?\n/).flatMap(l => l.split(',').map(Number)).filter(n => n >= 0 && n <= 9);
+            executeBacktest(src);
+        };
+        r.readAsText(f); return;
+    }
+    executeBacktest(src);
+}
+function executeBacktest(digits) {
+    if (digits.length < 6) { alert('Need at least 6 digits'); return; }
+    const stake = parseFloat($('stake').value) || 1;
+    let equity = 0, wins = 0, losses = 0, curve = [];
+
+    for (let i = 5; i < digits.length; i++) {
+        last5 = digits.slice(i - 5, i);
+        const signal = getSignalSilent();
+        if (signal) {
+            const payout = (signal === 'RISE' && digits[i] >= 5) || (signal === 'FALL' && digits[i] < 5)
+                ? stake * payoutPct : -stake;
+            equity += payout;
+            payout > 0 ? wins++ : losses++;
+        }
+        curve.push(equity);
+    }
+
+    const total = wins + losses;
+    const winRate = total ? (wins / total * 100).toFixed(1) : 0;
+    $('backtestResult').innerHTML = `
+        <strong>Backtest Complete</strong><br>
+        Trades: ${total} | Wins: ${wins} | Losses: ${losses} | Win%: ${winRate}<br>
+        Net P/L: ${equity.toFixed(2)} | ROI: ${total ? ((equity / (total * stake)) * 100).toFixed(1) : 0}%
+    `;
+
+    const ctx = $('backtestChart').getContext('2d');
+    const labels = Array.from({ length: curve.length }, (_, i) => i + 1);
+    if (backtestChart) backtestChart.destroy();
+    backtestChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets: [{ label: 'Equity', data: curve, borderColor: '#27ae60', fill: false }] },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+function getSignalSilent() {
+    if (last5.length < 5) return null;
+    const [d1, d2, d3, d4, d5] = last5;
+    const pivot = d3;
+    const upper = d5 > pivot && d4 > pivot && d2 <= pivot;
+    const lower = d5 < pivot && d4 < pivot && d2 >= pivot;
+    const wormUp = d5 > d4 && d4 > d3;
+    const wormDown = d5 < d4 && d4 > d3;
+    const rise = (upper || wormUp) && d5 >= 6;
+    const fall = (lower || wormDown) && d5 <= 3;
+    return rise ? 'RISE' : fall ? 'FALL' : null;
+}
+
+/* =============================================================
+   EXPORT
+   ============================================================= */
+function exportHistory(fmt) {
+    if (!tradeHistory.length) { alert('No trades'); return; }
+    let txt = '';
+    if (fmt === 'csv') {
+        txt = 'Timestamp,Direction,Stake,Result,Profit\n';
+        tradeHistory.forEach(t => txt += `${t.timestamp},${t.direction},${t.stake},${t.result || ''},${t.profit || ''}\n`);
+        downloadFile(txt, 'trades.csv', 'text/csv');
+    } else {
+        txt = JSON.stringify(tradeHistory, null, 2);
+        downloadFile(txt, 'trades.json', 'application/json');
+    }
+}
+function downloadFile(c, f, m) {
+    const b = new Blob([c], { type: m });
+    const u = URL.createObjectURL(b);
+    const a = document.createElement('a'); a.href = u; a.download = f; a.click();
+    URL.revokeObjectURL(u);
+}
+
+/* =============================================================
+   INIT
+   ============================================================= */
+updateLang();
+</script>
+</body>
+</html>
